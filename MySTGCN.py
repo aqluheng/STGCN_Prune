@@ -178,29 +178,6 @@ class ST_GCN_18(nn.Module):
 
         return x
 
-    def extract_feature(self, x):
-
-        # data normalization
-        N, C, T, V, M = x.size()
-        x = x.permute(0, 4, 3, 1, 2).contiguous()
-        x = x.view(N * M, V * C, T)
-        x = self.data_bn(x)
-        x = x.view(N, M, V, C, T)
-        x = x.permute(0, 1, 3, 4, 2).contiguous()
-        x = x.view(N * M, C, T, V)
-
-        # forward
-        for gcn, importance in zip(self.st_gcn_networks, self.edge_importance):
-            x, _ = gcn(x, self.A * importance)
-
-        _, c, t, v = x.size()
-        feature = x.view(N, M, c, t, v).permute(0, 2, 3, 4, 1)
-
-        # prediction
-        x = self.fcn(x)
-        output = x.view(N, M, -1, t, v).permute(0, 2, 3, 4, 1)
-
-        return output, feature
 
 
 class st_gcn_block(nn.Module):
@@ -244,19 +221,17 @@ class st_gcn_block(nn.Module):
         self.gcn = ConvTemporalGraphical(in_channels, out_channels,
                                          kernel_size[1])
 
-        self.tcn = nn.Sequential(
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(
+        self.tcnBN1 = nn.BatchNorm2d(out_channels)
+        self.tcnRelu = nn.ReLU(inplace=True)
+        self.tcnConv = nn.Conv2d(
                 out_channels,
                 out_channels,
                 (kernel_size[0], 1),
                 (stride, 1),
                 padding,
-            ),
-            nn.BatchNorm2d(out_channels),
-            nn.Dropout(dropout, inplace=True),
-        )
+            )
+        self.tcnBN2 =  nn.BatchNorm2d(out_channels)
+        self.tcnDrop = nn.Dropout(dropout, inplace=True)
 
         if not residual:
             self.residual = zero
@@ -277,7 +252,13 @@ class st_gcn_block(nn.Module):
     def forward(self, x, A):
         res = self.residual(x)
         x, A = self.gcn(x, A)
-        x = self.tcn(x) + res
+
+        x = self.tcnBN1(x)
+        x = self.tcnRelu(x)
+        x = self.tcnConv(x)
+        x = self.tcnBN2(x)
+        x = self.tcnDrop(x)
+        x = x + res
         return self.relu(x), A
 
 

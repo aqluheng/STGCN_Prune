@@ -1,0 +1,2 @@
+这一版是纯净的STGCN,剥离了mmcv只依赖pytorch
+拆分了TCN的sequential,并写入了模型
